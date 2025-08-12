@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>WebRayGaussX</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: #000;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      color: #fff;
+      overflow: hidden;
+    }
+
+    /* Menu avec tuiles images locales */
+    #menu {
+      display: grid;
+      place-items: center;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 28px;
+      padding: 8vh 6vw;
+      min-height: 100vh;
+    }
+    .tile {
+      width: 100%;
+      max-width: 350px;
+      aspect-ratio: 1;
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: #111;
+      cursor: pointer;
+      position: relative;
+      transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+      outline: none;
+    }
+    .tile:hover, .tile:focus-visible {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      border-color: rgba(255,255,255,0.3);
+    }
+    .tile img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      user-select: none;
+      -webkit-user-drag: none;
+    }
+    .tile .label {
+      position: absolute;
+      left: 10px;
+      bottom: 10px;
+      padding: 6px 10px;
+      border-radius: 8px;
+      background: rgba(0,0,0,0.55);
+      font-size: 14px;
+      letter-spacing: .3px;
+      border: 1px solid rgba(255,255,255,0.15);
+    }
+
+    /* Viewer : image + panneau d’aide à droite */
+    #viewer {
+      display: none; /* devient flex une fois un modèle choisi */
+      height: 100vh;
+      width: 100vw;
+      align-items: stretch;
+    }
+    #left-pane {
+      flex: 1 1 auto;
+      min-width: 0;
+      background: #000;
+      display: flex;
+      flex-direction: column; /* pour pouvoir mettre le commentaire SOUS l'image */
+    }
+    /* Zone image (s'adapte) */
+    #image-wrap {
+      position: relative;
+      flex: 1 1 auto;     /* prend tout l'espace dispo au-dessus des notes */
+      min-height: 0;
+      background: #000;
+    }
+    #rendered {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+      user-select: none;
+      pointer-events: none; /* évite le drag de l'image */
+    }
+
+    /* Zone de commentaire sous l'image */
+    #render-notes {
+      flex: 0 0 auto;
+      padding: 12px 16px;
+      border-top: 1px solid rgba(255,255,255,0.12);
+      background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+      font-size: 13px;
+      line-height: 1.4;
+    }
+    #render-notes h3 {
+      margin: 0 0 6px 0;
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: .2px;
+      opacity: .9;
+    }
+    #render-notes ul {
+      margin: 6px 0 0 18px;
+      padding: 0;
+    }
+    #render-notes li {
+      margin: 2px 0;
+      opacity: .9;
+    }
+    .badge {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 6px;
+      border: 1px solid rgba(255,255,255,0.25);
+      background: rgba(255,255,255,0.08);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 11px;
+      letter-spacing: .3px;
+      margin-right: 6px;
+    }
+
+    #sidebar {
+      width: 320px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+      border-left: 1px solid rgba(255,255,255,0.12);
+      padding: 18px;
+    }
+    #sidebar h2 {
+      margin: 0 0 12px 0;
+      font-size: 18px;
+      font-weight: 600;
+      letter-spacing: .3px;
+    }
+    #model-name {
+      opacity: .8;
+      font-size: 12px;
+      margin-bottom: 12px;
+    }
+    .hint {
+      display: grid;
+      grid-template-columns: 28px 1fr;
+      gap: 10px;
+      align-items: start;
+      padding: 10px 8px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.03);
+      margin-bottom: 10px;
+    }
+    .hint .icon {
+      width: 28px;
+      height: 28px;
+      opacity: .9;
+    }
+    .hint .text b { font-weight: 600; }
+    .kbd {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 6px;
+      border: 1px solid rgba(255,255,255,0.25);
+      background: rgba(255,255,255,0.08);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+      letter-spacing: .3px;
+    }
+    .sep {
+      height: 1px;
+      background: rgba(255,255,255,0.12);
+      margin: 12px 0;
+    }
+
+    /* FPS overlay */
+    #fps-counter {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(0,0,0,0.6);
+      color: #fff;
+      padding: 6px 10px;
+      border-radius: 6px;
+      font: 12px/1 monospace;
+      z-index: 2;
+      pointer-events: none;
+      display: none; /* visible seulement en mode viewer */
+    }
+
+    /* Petits écrans : plier le panneau sous l'image */
+    @media (max-width: 900px) {
+      #viewer { flex-direction: column; }
+      #sidebar { width: 100vw; border-left: none; border-top: 1px solid rgba(255,255,255,0.12); }
+      #fps-counter { top: 10px; left: 10px; }
+    }
+  </style>
+</head>
+<body>
+  <!-- MENU : tuiles avec images JPEG locales -->
+  <div id="menu">
+    <div class="tile" id="tile-mic" tabindex="0" role="button" aria-label="Mic">
+      <img alt="Mic preview" src="images/mic.jpeg" />
+      <div class="label">Mic</div>
+    </div>
+
+    <div class="tile" id="tile-beryl" tabindex="0" role="button" aria-label="Beryl">
+      <img alt="Beryl preview" src="images/beryl.jpeg" />
+      <div class="label">Beryl</div>
+    </div>
+
+    <div class="tile" id="tile-globe" tabindex="0" role="button" aria-label="Globe">
+      <img alt="Globe preview" src="images/globe.jpeg" />
+      <div class="label">Globe</div>
+    </div>
+  </div>
+
+  <!-- VIEWER : image + panneau d’aide + notes sous l'image -->
+  <div id="viewer">
+    <div id="left-pane">
+      <div id="image-wrap">
+        <div id="fps-counter">FPS: --</div>
+        <img id="rendered" draggable="false" />
+      </div>
+      <div id="render-notes">
+        <!-- Contenu mis à jour dynamiquement selon le modèle -->
+      </div>
+    </div>
+
+    <aside id="sidebar">
+      <h2>Controls</h2>
+      <div id="model-name">Model: —</div>
+
+      <!-- Rotate -->
+      <div class="hint">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path fill="#ddd" d="M12 2a6 6 0 0 0-6 6v2H4l3 3 3-3H8V8a4 4 0 1 1 8 0v2h-2V8a6 6 0 0 0-6-6z"/>
+          <rect x="5" y="15" width="14" height="6" rx="2" fill="#999"/>
+        </svg>
+        <div class="text"><b>Left-click + drag</b> — rotate</div>
+      </div>
+
+      <!-- Pan -->
+      <div class="hint">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="3" y="3" width="18" height="18" rx="4" fill="#999"/>
+          <rect x="6" y="6" width="12" height="12" rx="2" fill="#bbb"/>
+          <path d="M8 12h8M12 8v8" stroke="#111" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <div class="text"><b>Right-click + drag</b> — pan (translate)</div>
+      </div>
+
+      <!-- Zoom -->
+      <div class="hint">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="10" cy="10" r="6" fill="#bbb"/>
+          <rect x="14" y="14" width="8" height="2" transform="rotate(45 14 14)" fill="#ddd"/>
+          <rect x="9" y="9" width="2" height="6" rx="1" fill="#111"/>
+          <rect x="7" y="12" width="6" height="2" rx="1" fill="#111"/>
+        </svg>
+        <div class="text"><b>Scroll</b> — zoom in/out</div>
+      </div>
+
+      <div class="sep"></div>
+
+      <!-- Reset -->
+      <div class="hint">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 5V2l-4 4 4 4V7a5 5 0 1 1-5 5" fill="none" stroke="#ddd" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <div class="text"><b><span class="kbd">R</span></b> — reset camera</div>
+      </div>
+
+      <!-- Back to menu -->
+      <div class="hint">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="3" y="5" width="18" height="14" rx="2" fill="#bbb"/>
+          <path d="M9 12h6M12 9v6" stroke="#111" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <div class="text"><b><span class="kbd">Esc</span></b> — back to menu</div>
+      </div>
+    </aside>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.module.js';
+
+    const rendered   = document.getElementById('rendered');
+    const menu       = document.getElementById('menu');
+    const viewer     = document.getElementById('viewer');
+    const fpsBox     = document.getElementById('fps-counter');
+    const tileMic = document.getElementById('tile-mic');
+    const tileBeryl = document.getElementById('tile-beryl');
+    const tileGlobe   = document.getElementById('tile-globe');
+    const modelName  = document.getElementById('model-name');
+    const renderNotes= document.getElementById('render-notes');
+
+    rendered.draggable = false;
+
+    // Si tu utilises un tunnel/domain public HTTPS, décommente et remplace :
+    // const WSS_URL = "wss://render.mondomaine.com/ws";
+    // const ws = new WebSocket(WSS_URL);
+    const ws = new WebSocket("ws://" + window.location.host + "/ws");
+
+    // Explications par modèle (en anglais)
+    const NOTES = {
+      mic: `
+        <h3>Mic</h3>
+        <div>
+          <span class="badge">Blender</span>
+        </div>
+        <ul>
+          <li>Scene mic from Blender synthetic dataset</li>
+        </ul>
+      `,
+      beryl: `
+        <h3>Beryl</h3>
+        <div>
+          <span class="badge">Musée Minéralogie de Mines Paris</span>
+        </div>
+        <ul>
+          <li>This mineral was modeled from 158 photos taken with the Fujifilm X-T4 camera.</li>
+          <li>Camera poses estimated using Reality Capture v1.5 software.</li>
+          <li>3D model optimized using the RayGaussX method.</li>
+          <li>It is a beryl (species name), aquamarine variety, from Governador Valadares, Minas Gerais, Brazil</li>
+          <li>The sample has the catalog number: ENSMP 11067</li>
+        </ul>
+      `,
+      globe: `
+        <h3>Rendering method: Cube (box intersection + shading)</h3>
+        <div>
+          <span class="badge">Bibliothèque de Mines Paris</span>
+        </div>
+        <ul>
+          <li>Globe de Chancourtois.</li>
+        </ul>
+      `
+    };
+
+    // Anti-spam d’envoi
+    let isSending = false;
+    let pendingCamera = null;
+
+    // Modèle sélectionné ("sphere" | "cube")
+    let selectedModel = null;
+
+    // FPS timing
+    let lastFrameTime = null;
+
+    ws.onopen = () => {
+      console.log("✅ WebSocket connected");
+    };
+
+    ws.onmessage = (e) => {
+      // FPS
+      const now = performance.now();
+      if (lastFrameTime != null) {
+        const delta = (now - lastFrameTime) / 1000;
+        const fps = (1 / delta).toFixed(1);
+        fpsBox.textContent = `FPS: ${fps}`;
+      }
+      lastFrameTime = now;
+
+      // Image (base64) — ajuste le MIME si tu envoies du PNG
+      try {
+        rendered.src = "data:image/jpeg;base64," + e.data;
+      } catch {
+        try {
+          const obj = JSON.parse(e.data);
+          if (obj?.image && obj?.mime) {
+            rendered.src = `data:${obj.mime};base64,${obj.image}`;
+          }
+        } catch {}
+      }
+
+      // Libérer le verrou et envoyer l’éventuel dernier état
+      isSending = false;
+      if (pendingCamera) {
+        sendCamera(pendingCamera);
+        pendingCamera = null;
+      }
+    };
+
+    // Caméra (maths uniquement)
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const target = new THREE.Vector3(0, 0, 0);
+
+    let radius = 5;
+    let theta  = 0;
+    let phi    = 3* Math.PI / 4;
+
+    function updateCamera() {
+      const x = target.x + radius * Math.sin(phi) * Math.cos(theta);
+      const y = target.y + radius * Math.cos(phi);
+      const z = target.z + radius * Math.sin(phi) * Math.sin(theta);
+      camera.position.set(x, y, z);
+      camera.lookAt(target);
+    }
+
+    function sendCamera(cam = null) {
+      if (ws.readyState !== WebSocket.OPEN || !selectedModel) return;
+      const data = cam || {
+        position: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
+        target:   { x: target.x,          y: target.y,          z: target.z },
+        fov: camera.fov,
+        model: selectedModel
+      };
+      if (isSending) { pendingCamera = data; return; }
+      isSending = true;
+      ws.send(JSON.stringify({ camera: data }));
+    }
+
+    function showRenderView(model) {
+      selectedModel = model;
+      modelName.textContent = `Model: ${model}`;
+      renderNotes.innerHTML = NOTES[model] || "";
+      menu.style.display   = "none";
+      viewer.style.display = "flex";
+      fpsBox.style.display = "block";
+      lastFrameTime = null;
+      fpsBox.textContent = "FPS: --";
+      updateCamera();
+      sendCamera(); // rendu initial
+    }
+
+    function returnToMenu() {
+      selectedModel = null;
+      menu.style.display   = "grid";
+      viewer.style.display = "none";
+      fpsBox.style.display = "none";
+      renderNotes.innerHTML = "";
+    }
+
+    // Tuiles cliquables + clavier
+    function activateTile(model) { showRenderView(model); }
+    tileMic.addEventListener('click', () => activateTile('mic'));
+    tileBeryl.addEventListener('click', () => activateTile('beryl'));
+    tileGlobe  .addEventListener('click', () => activateTile('globe'));
+    [tileMic, tileBeryl, tileGlobe].forEach(tile => {
+      tile.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tile.click(); }
+      });
+    });
+
+    // Interactions : orbit (LMB), pan (RMB), zoom (wheel)
+    let isDragging = false;
+    let isPanning  = false;
+    let lastX = 0, lastY = 0;
+
+    window.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      if (viewer.style.display === "flex") {
+        if (e.button === 0) isDragging = true;
+        else if (e.button === 2) isPanning = true;
+        lastX = e.clientX; lastY = e.clientY;
+      }
+    });
+    window.addEventListener('mouseup',   () => { isDragging = false; isPanning = false; });
+    window.addEventListener('mouseleave',() => { isDragging = false; isPanning = false; });
+
+    window.addEventListener('mousemove', (e) => {
+      if (viewer.style.display !== "flex") return;
+      if (isDragging && e.buttons === 1) {
+        e.preventDefault();
+        const dx = e.clientX - lastX;
+        const dy = e.clientY - lastY;
+        theta -= dx * 0.005;
+        phi   += dy * 0.005;
+        phi = Math.max(0.01, Math.min(Math.PI - 0.01, phi));
+        lastX = e.clientX; lastY = e.clientY;
+        updateCamera(); sendCamera();
+      } else if (isPanning && e.buttons === 2) {
+        e.preventDefault();
+        const dx = e.clientX - lastX;
+        const dy = e.clientY - lastY;
+        const panSpeed = 0.005 * radius;
+        const dirCamx = (target.x - camera.position.x)/radius;
+        const dirCamy = (target.y - camera.position.y)/radius;
+        const dirCamz = (target.z - camera.position.z)/radius;
+
+        target.x += dx * (-dirCamz) * panSpeed;
+        target.z += dx * dirCamx * panSpeed;
+
+        target.x += dy * (dirCamx*dirCamy) * panSpeed;
+        target.y += dy * (-dirCamz*dirCamz-dirCamx*dirCamx) * panSpeed;
+        target.z += dy * (dirCamy*dirCamz) * panSpeed;
+        lastX = e.clientX; lastY = e.clientY;
+        updateCamera(); sendCamera();
+      }
+    });
+
+    window.addEventListener('wheel', (e) => {
+      if (viewer.style.display !== "flex") return;
+      e.preventDefault();
+      radius *= (1 + e.deltaY * 0.001);
+      radius  = Math.max(0.1, Math.min(100, radius));
+      updateCamera(); sendCamera();
+    }, { passive: false });
+
+    // Reset (R) et retour (Esc)
+    window.addEventListener('keydown', (e) => {
+      if (viewer.style.display !== "flex") return;
+      if (e.key === 'r' || e.key === 'R') {
+        radius = 5; theta = 0; phi = 3* Math.PI / 4;
+        target.set(0,0,0);
+        updateCamera(); sendCamera();
+      }
+      if (e.key === 'Escape') {
+        radius = 5; theta = 0; phi = 3* Math.PI / 4;
+        target.set(0,0,0);
+        returnToMenu();
+      }
+    });
+
+    // Bloquer le menu contextuel (clic droit)
+    window.addEventListener('contextmenu', (e) => e.preventDefault());
+
+    // Resize
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+    });
+
+    // Boucle légère pour garder la caméra cohérente (sans envoi)
+    requestAnimationFrame(function loop() {
+      updateCamera();
+      requestAnimationFrame(loop);
+    });
+  </script>
+</body>
+</html>
