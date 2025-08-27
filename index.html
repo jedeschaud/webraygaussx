@@ -1,6 +1,15 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
+  <script>
+  (function(){
+    const TOKEN_KEY = "rt_auth";
+    const TOKEN_VAL = "ok";
+    const has = (localStorage.getItem(TOKEN_KEY) === TOKEN_VAL) ||
+                (sessionStorage.getItem(TOKEN_KEY) === TOKEN_VAL);
+    if (!has) location.replace("login.html");
+  })();
+  </script> 
   <meta charset="UTF-8" />
   <title>WebRayGaussX</title>
   <style>
@@ -132,6 +141,9 @@
       background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
       border-left: 1px solid rgba(255,255,255,0.12);
       padding: 18px;
+
+      display: flex;            /* colonne flex */
+      flex-direction: column;   /* verticale */
     }
     #sidebar h2 {
       margin: 0 0 12px 0;
@@ -198,6 +210,27 @@
       #sidebar { width: 100vw; border-left: none; border-top: 1px solid rgba(255,255,255,0.12); }
       #fps-counter { top: 10px; left: 10px; }
     }
+
+    #logout-menu-btn {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+    }
+
+    #logout-menu-btn button {
+      background: #2e66ff;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 16px;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+    }
+
+    #logout-menu-btn button:hover {
+      background: #1c4fd7;
+    }
   </style>
 </head>
 <body>
@@ -216,6 +249,10 @@
     <div class="tile" id="tile-globe" tabindex="0" role="button" aria-label="Globe">
       <img alt="Globe preview" src="images/globe.jpeg" />
       <div class="label">Globe</div>
+    </div>
+
+    <div id="logout-menu-btn">
+      <button>Logout</button>
     </div>
   </div>
 
@@ -283,10 +320,29 @@
         </svg>
         <div class="text"><b><span class="kbd">Esc</span></b> — back to menu</div>
       </div>
+
+      <div class="sep" style="margin-top:auto;"></div>
+
+      <!-- Logout -->
+      <div class="hint" style="cursor:pointer;" id="logout-btn">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M16 17l5-5-5-5M21 12H9M13 21h-8a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8"
+                fill="none" stroke="#ddd" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <div class="text"><b>Logout</b> — return to login</div>
+      </div>
+
     </aside>
   </div>
 
+  <div class="sep"></div>
+
+  
+
+
   <script type="module">
+
+
     import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.module.js';
 
     const rendered   = document.getElementById('rendered');
@@ -305,7 +361,8 @@
     // const WSS_URL = "wss://render.mondomaine.com/ws";
     // const ws = new WebSocket(WSS_URL);
     //const ws = new WebSocket("ws://" + window.location.host + "/ws");
-    const ws = new WebSocket("wss://97f9a8df7e69.ngrok-free.app/ws");
+    const ws = new WebSocket("wss://relevant-lynx-thorough.ngrok-free.app/ws");
+    //const ws = new WebSocket(`wss://${window.location.host}/ws`);
 
     // Explications par modèle (en anglais)
     const NOTES = {
@@ -531,6 +588,21 @@
       updateCamera();
       requestAnimationFrame(loop);
     });
+
+    // --- Logout (menu page) ---
+    document.getElementById("logout-menu-btn").addEventListener("click", () => {
+      localStorage.removeItem("rt_auth");
+      sessionStorage.removeItem("rt_auth");
+      location.href = "login.html";
+    });
+
+    // --- Logout handler ---
+    document.getElementById("logout-btn").addEventListener("click", () => {
+      localStorage.removeItem("rt_auth");
+      sessionStorage.removeItem("rt_auth");
+      location.href = "login.html";
+    });
+
   </script>
 </body>
 </html>
