@@ -202,6 +202,7 @@
       z-index: 2;
       pointer-events: none;
       display: none; /* visible seulement en mode viewer */
+      white-space: nowrap;
     }
 
     /* Petits écrans : plier le panneau sous l'image */
@@ -337,32 +338,23 @@
 
   <div class="sep"></div>
 
-  
-
-
   <script type="module">
-
-
     import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.module.js';
 
     const rendered   = document.getElementById('rendered');
     const menu       = document.getElementById('menu');
     const viewer     = document.getElementById('viewer');
     const fpsBox     = document.getElementById('fps-counter');
-    const tileMic = document.getElementById('tile-mic');
-    const tileBeryl = document.getElementById('tile-beryl');
-    const tileGlobe   = document.getElementById('tile-globe');
+    const tileMic    = document.getElementById('tile-mic');
+    const tileBeryl  = document.getElementById('tile-beryl');
+    const tileGlobe  = document.getElementById('tile-globe');
     const modelName  = document.getElementById('model-name');
     const renderNotes= document.getElementById('render-notes');
 
     rendered.draggable = false;
 
-    // Si tu utilises un tunnel/domain public HTTPS, décommente et remplace :
-    // const WSS_URL = "wss://render.mondomaine.com/ws";
-    // const ws = new WebSocket(WSS_URL);
-    //const ws = new WebSocket("ws://" + window.location.host + "/ws");
+    // WebSocket (ngrok)
     const ws = new WebSocket("wss://relevant-lynx-thorough.ngrok-free.app/ws");
-    //const ws = new WebSocket(`wss://${window.location.host}/ws`);
 
     // Explications par modèle (en anglais)
     const NOTES = {
@@ -389,7 +381,7 @@
         </ul>
       `,
       globe: `
-        <h3>Rendering method: Cube (box intersection + shading)</h3>
+        <h3>Globe</h3>
         <div>
           <span class="badge">Bibliothèque de Mines Paris</span>
         </div>
@@ -403,39 +395,65 @@
     let isSending = false;
     let pendingCamera = null;
 
-    // Modèle sélectionné ("sphere" | "cube")
+    // Modèle sélectionné ("mic" | "beryl" | "globe")
     let selectedModel = null;
 
-    // FPS timing
-    let lastFrameTime = null;
+    // FPS : fenêtre glissante + temps serveur
+    const frameTimes = [];
+    const FPS_WINDOW_MS = 1000;
+    let lastServerMs = null;
+    let fpsEMA = null;
 
     ws.onopen = () => {
       console.log("✅ WebSocket connected");
     };
 
     ws.onmessage = (e) => {
-      // FPS
       const now = performance.now();
-      if (lastFrameTime != null) {
-        const delta = (now - lastFrameTime) / 1000;
-        const fps = (1 / delta).toFixed(1);
-        fpsBox.textContent = `FPS: ${fps}`;
-      }
-      lastFrameTime = now;
 
-      // Image (base64) — ajuste le MIME si tu envoies du PNG
+      // 1) Décode message : JSON {image, render_ms} ou base64 brut
+      let imgB64 = null;
       try {
-        rendered.src = "data:image/jpeg;base64," + e.data;
-      } catch {
-        try {
-          const obj = JSON.parse(e.data);
-          if (obj?.image && obj?.mime) {
-            rendered.src = `data:${obj.mime};base64,${obj.image}`;
+        const obj = JSON.parse(e.data);
+        if (obj && obj.image) {
+          imgB64 = obj.image;
+          if (typeof obj.render_ms === "number") {
+            lastServerMs = 1000.0/obj.render_ms;
           }
-        } catch {}
+        }
+      } catch {
+        imgB64 = e.data;
       }
 
-      // Libérer le verrou et envoyer l’éventuel dernier état
+      if (imgB64) {
+        rendered.src = "data:image/jpeg;base64," + imgB64;
+      }
+
+      // 2) FPS glissant + EMA
+      frameTimes.push(now);
+      while (frameTimes.length > 0 && frameTimes[0] <= now - FPS_WINDOW_MS) {
+        frameTimes.shift();
+      }
+
+      let label = "FPS ";
+      //if (frameTimes.length >= 2) {
+      //  const span = frameTimes[frameTimes.length - 1] - frameTimes[0]; // ms
+      //  const instFps = (frameTimes.length - 1) * 1000 / span;
+      //  const alpha = 0.3;
+      //  fpsEMA = fpsEMA == null ? instFps : fpsEMA + alpha * (instFps - fpsEMA);
+      //  label += fpsEMA.toFixed(1);
+      //} else {
+      //  label += "--";
+      //}
+
+      if (lastServerMs != null) {
+        //label += ` Server: ${lastServerMs.toFixed(0)}`;
+        label += ` Server: ${lastServerMs.toFixed(1)}`;
+      }
+
+      fpsBox.textContent = label;
+
+      // 3) Libérer le verrou et envoyer l’éventuel dernier état
       isSending = false;
       if (pendingCamera) {
         sendCamera(pendingCamera);
@@ -444,12 +462,17 @@
     };
 
     // Caméra (maths uniquement)
-    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const camera = new THREE.PerspectiveCamera(
+      75,
+      window.innerWidth / window.innerHeight,
+      0.1,
+      1000
+    );
     const target = new THREE.Vector3(0, 0, 0);
 
     let radius = 5;
     let theta  = 0;
-    let phi    = 3* Math.PI / 4;
+    let phi    = 3 * Math.PI / 4;
 
     function updateCamera() {
       const x = target.x + radius * Math.sin(phi) * Math.cos(theta);
@@ -479,7 +502,9 @@
       menu.style.display   = "none";
       viewer.style.display = "flex";
       fpsBox.style.display = "block";
-      lastFrameTime = null;
+      frameTimes.length = 0;
+      fpsEMA = null;
+      lastServerMs = null;
       fpsBox.textContent = "FPS: --";
       updateCamera();
       sendCamera(); // rendu initial
@@ -495,9 +520,9 @@
 
     // Tuiles cliquables + clavier
     function activateTile(model) { showRenderView(model); }
-    tileMic.addEventListener('click', () => activateTile('mic'));
+    tileMic  .addEventListener('click', () => activateTile('mic'));
     tileBeryl.addEventListener('click', () => activateTile('beryl'));
-    tileGlobe  .addEventListener('click', () => activateTile('globe'));
+    tileGlobe.addEventListener('click', () => activateTile('globe'));
     [tileMic, tileBeryl, tileGlobe].forEach(tile => {
       tile.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tile.click(); }
@@ -602,7 +627,6 @@
       sessionStorage.removeItem("rt_auth");
       location.href = "login.html";
     });
-
   </script>
 </body>
 </html>
