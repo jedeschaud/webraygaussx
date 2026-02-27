@@ -252,6 +252,11 @@
       <div class="label">Globe</div>
     </div>
 
+    <div class="tile" id="tile-nodule" tabindex="0" role="button" aria-label="Nodule">
+      <img alt="Nodule preview" src="images/nodule.jpeg" />
+      <div class="label">Nodule</div>
+    </div>
+
     <div id="logout-menu-btn">
       <button>Logout</button>
     </div>
@@ -348,6 +353,7 @@
     const tileMic    = document.getElementById('tile-mic');
     const tileBeryl  = document.getElementById('tile-beryl');
     const tileGlobe  = document.getElementById('tile-globe');
+    const tileNodule  = document.getElementById('tile-nodule');
     const modelName  = document.getElementById('model-name');
     const renderNotes= document.getElementById('render-notes');
 
@@ -387,6 +393,15 @@
         </div>
         <ul>
           <li>Globe de Chancourtois.</li>
+        </ul>
+      `,
+      nodule: `
+        <h3>Nodule</h3>
+        <div>
+          <span class="badge">Muséum national d'Histoire naturelle de Paris</span>
+        </div>
+        <ul>
+          <li>Nodule polymétallique</li>
         </ul>
       `
     };
@@ -470,7 +485,7 @@
     );
     const target = new THREE.Vector3(0, 0, 0);
 
-    let radius = 5;
+    let radius = 15;
     let theta  = 0;
     let phi    = 3 * Math.PI / 4;
 
@@ -523,7 +538,8 @@
     tileMic  .addEventListener('click', () => activateTile('mic'));
     tileBeryl.addEventListener('click', () => activateTile('beryl'));
     tileGlobe.addEventListener('click', () => activateTile('globe'));
-    [tileMic, tileBeryl, tileGlobe].forEach(tile => {
+    tileNodule.addEventListener('click', () => activateTile('nodule'));
+    [tileMic, tileBeryl, tileGlobe, tileNodule].forEach(tile => {
       tile.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tile.click(); }
       });
@@ -588,12 +604,12 @@
     window.addEventListener('keydown', (e) => {
       if (viewer.style.display !== "flex") return;
       if (e.key === 'r' || e.key === 'R') {
-        radius = 5; theta = 0; phi = 3* Math.PI / 4;
+        radius = 15; theta = 0; phi = 3* Math.PI / 4;
         target.set(0,0,0);
         updateCamera(); sendCamera();
       }
       if (e.key === 'Escape') {
-        radius = 5; theta = 0; phi = 3* Math.PI / 4;
+        radius = 15; theta = 0; phi = 3* Math.PI / 4;
         target.set(0,0,0);
         returnToMenu();
       }
