@@ -11,6 +11,7 @@
   })();
   </script> 
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>WebRayGaussX</title>
   <style>
     :root { color-scheme: dark; }
@@ -20,7 +21,7 @@
       background: #000;
       font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
       color: #fff;
-      overflow: hidden;
+      overflow: auto;
     }
 
     /* Menu avec tuiles images locales */
@@ -74,7 +75,9 @@
     #viewer {
       display: none; /* devient flex une fois un modèle choisi */
       height: 100vh;
-      width: 100vw;
+      height: 100dvh;
+      width: 100%;
+      overflow: hidden;
       align-items: stretch;
     }
     #left-pane {
@@ -90,6 +93,9 @@
       flex: 1 1 auto;     /* prend tout l'espace dispo au-dessus des notes */
       min-height: 0;
       background: #000;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
     }
     #rendered {
       width: 100%;
@@ -138,6 +144,8 @@
 
     #sidebar {
       width: 320px;
+      flex: 0 0 320px;
+      overflow-y: auto;
       background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
       border-left: 1px solid rgba(255,255,255,0.12);
       padding: 18px;
@@ -208,8 +216,18 @@
     /* Petits écrans : plier le panneau sous l'image */
     @media (max-width: 900px) {
       #viewer { flex-direction: column; }
-      #sidebar { width: 100vw; border-left: none; border-top: 1px solid rgba(255,255,255,0.12); }
+      #left-pane { min-height: 0; }
+      #image-wrap { min-height: 160px; }
+      #render-notes { max-height: 18dvh; overflow-y: auto; }
+      #sidebar { width: 100%; flex: 0 0 auto; max-height: 30%; border-left: none; border-top: 1px solid rgba(255,255,255,0.12); padding: 12px; }
       #fps-counter { top: 10px; left: 10px; }
+    }
+
+    .viewer-actions { display: flex; gap: 8px; margin-bottom: 12px; }
+    .viewer-actions button {
+      flex: 1; min-height: 44px; border: 1px solid rgba(255,255,255,.3);
+      border-radius: 8px; background: #222; color: #fff; cursor: pointer;
+      font: inherit;
     }
 
     #logout-menu-btn {
@@ -275,6 +293,10 @@
     </div>
 
     <aside id="sidebar">
+      <div class="viewer-actions">
+        <button id="reset-camera" type="button">Reset camera</button>
+        <button id="back-to-menu" type="button">Back to menu</button>
+      </div>
       <h2>Controls</h2>
       <div id="model-name">Model: —</div>
 
@@ -284,7 +306,7 @@
           <path fill="#ddd" d="M12 2a6 6 0 0 0-6 6v2H4l3 3 3-3H8V8a4 4 0 1 1 8 0v2h-2V8a6 6 0 0 0-6-6z"/>
           <rect x="5" y="15" width="14" height="6" rx="2" fill="#999"/>
         </svg>
-        <div class="text"><b>Left-click + drag</b> — rotate</div>
+        <div class="text"><b>Left-click + drag / one finger</b> — rotate</div>
       </div>
 
       <!-- Pan -->
@@ -294,7 +316,7 @@
           <rect x="6" y="6" width="12" height="12" rx="2" fill="#bbb"/>
           <path d="M8 12h8M12 8v8" stroke="#111" stroke-width="2" stroke-linecap="round"/>
         </svg>
-        <div class="text"><b>Right-click + drag</b> — pan (translate)</div>
+        <div class="text"><b>Right-click + drag / two-finger drag</b> — pan (translate)</div>
       </div>
 
       <!-- Zoom -->
@@ -305,7 +327,7 @@
           <rect x="9" y="9" width="2" height="6" rx="1" fill="#111"/>
           <rect x="7" y="12" width="6" height="2" rx="1" fill="#111"/>
         </svg>
-        <div class="text"><b>Scroll</b> — zoom in/out</div>
+        <div class="text"><b>Scroll / pinch with two fingers</b> — zoom in/out</div>
       </div>
 
       <div class="sep"></div>
@@ -545,78 +567,112 @@
       });
     });
 
-    // Interactions : orbit (LMB), pan (RMB), zoom (wheel)
-    let isDragging = false;
-    let isPanning  = false;
-    let lastX = 0, lastY = 0;
+    // Pointer Events couvrent souris, tactile et stylet sur la zone de rendu.
+    const imageWrap = document.getElementById('image-wrap');
+    const pointers = new Map();
+    const clampRadius = value => Math.max(0.1, Math.min(100, value));
 
-    window.addEventListener('mousedown', (e) => {
+    function clearPointers() {
+      const ids = [...pointers.keys()];
+      pointers.clear();
+      for (const id of ids) {
+        if (imageWrap.hasPointerCapture(id)) imageWrap.releasePointerCapture(id);
+      }
+    }
+
+    function pan(dx, dy) {
+      const panSpeed = 0.005 * radius;
+      const dirCamx = (target.x - camera.position.x) / radius;
+      const dirCamy = (target.y - camera.position.y) / radius;
+      const dirCamz = (target.z - camera.position.z) / radius;
+      target.x += (dx * -dirCamz + dy * dirCamx * dirCamy) * panSpeed;
+      target.y += dy * (-dirCamz * dirCamz - dirCamx * dirCamx) * panSpeed;
+      target.z += (dx * dirCamx + dy * dirCamy * dirCamz) * panSpeed;
+    }
+
+    function pairGesture() {
+      const [a, b] = [...pointers.values()];
+      return {
+        x: (a.x + b.x) / 2,
+        y: (a.y + b.y) / 2,
+        distance: Math.hypot(a.x - b.x, a.y - b.y)
+      };
+    }
+
+    imageWrap.addEventListener('pointerdown', e => {
+      if (!selectedModel || (e.pointerType === 'mouse' && e.button !== 0 && e.button !== 2)) return;
       e.preventDefault();
-      if (viewer.style.display === "flex") {
-        if (e.button === 0) isDragging = true;
-        else if (e.button === 2) isPanning = true;
-        lastX = e.clientX; lastY = e.clientY;
-      }
-    });
-    window.addEventListener('mouseup',   () => { isDragging = false; isPanning = false; });
-    window.addEventListener('mouseleave',() => { isDragging = false; isPanning = false; });
-
-    window.addEventListener('mousemove', (e) => {
-      if (viewer.style.display !== "flex") return;
-      if (isDragging && e.buttons === 1) {
-        e.preventDefault();
-        const dx = e.clientX - lastX;
-        const dy = e.clientY - lastY;
-        theta -= dx * 0.005;
-        phi   += dy * 0.005;
-        phi = Math.max(0.01, Math.min(Math.PI - 0.01, phi));
-        lastX = e.clientX; lastY = e.clientY;
-        updateCamera(); sendCamera();
-      } else if (isPanning && e.buttons === 2) {
-        e.preventDefault();
-        const dx = e.clientX - lastX;
-        const dy = e.clientY - lastY;
-        const panSpeed = 0.005 * radius;
-        const dirCamx = (target.x - camera.position.x)/radius;
-        const dirCamy = (target.y - camera.position.y)/radius;
-        const dirCamz = (target.z - camera.position.z)/radius;
-
-        target.x += dx * (-dirCamz) * panSpeed;
-        target.z += dx * dirCamx * panSpeed;
-
-        target.x += dy * (dirCamx*dirCamy) * panSpeed;
-        target.y += dy * (-dirCamz*dirCamz-dirCamx*dirCamx) * panSpeed;
-        target.z += dy * (dirCamy*dirCamz) * panSpeed;
-        lastX = e.clientX; lastY = e.clientY;
-        updateCamera(); sendCamera();
-      }
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, pan: e.button === 2 });
+      imageWrap.setPointerCapture(e.pointerId);
     });
 
-    window.addEventListener('wheel', (e) => {
-      if (viewer.style.display !== "flex") return;
+    imageWrap.addEventListener('pointermove', e => {
+      const previous = pointers.get(e.pointerId);
+      if (!selectedModel || !previous) return;
       e.preventDefault();
-      radius *= (1 + e.deltaY * 0.001);
-      radius  = Math.max(0.1, Math.min(100, radius));
+      const before = pointers.size === 2 ? pairGesture() : null;
+      const dx = e.clientX - previous.x;
+      const dy = e.clientY - previous.y;
+      pointers.set(e.pointerId, { ...previous, x: e.clientX, y: e.clientY });
+      if (pointers.size === 1) {
+        if (previous.pan) pan(dx, dy);
+        else {
+          theta -= dx * 0.005;
+          phi = Math.max(0.01, Math.min(Math.PI - 0.01, phi + dy * 0.005));
+        }
+      } else if (before) {
+        const after = pairGesture();
+        pan(after.x - before.x, after.y - before.y);
+        if (before.distance > 0 && after.distance > 0) {
+          radius = clampRadius(radius * before.distance / after.distance);
+        }
+      } else return; // Ignorer les mouvements à trois doigts ou plus.
+      updateCamera();
+      sendCamera();
+    });
+
+    function endPointer(e) {
+      pointers.delete(e.pointerId);
+      if (imageWrap.hasPointerCapture(e.pointerId)) imageWrap.releasePointerCapture(e.pointerId);
+    }
+    imageWrap.addEventListener('pointerup', endPointer);
+    imageWrap.addEventListener('pointercancel', endPointer);
+    imageWrap.addEventListener('lostpointercapture', e => pointers.delete(e.pointerId));
+    window.addEventListener('blur', clearPointers);
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) clearPointers();
+    });
+
+    imageWrap.addEventListener('wheel', e => {
+      if (!selectedModel) return;
+      e.preventDefault();
+      radius = clampRadius(radius * (1 + e.deltaY * 0.001));
       updateCamera(); sendCamera();
     }, { passive: false });
+    imageWrap.addEventListener('contextmenu', e => e.preventDefault());
 
-    // Reset (R) et retour (Esc)
-    window.addEventListener('keydown', (e) => {
-      if (viewer.style.display !== "flex") return;
-      if (e.key === 'r' || e.key === 'R') {
-        radius = 15; theta = 0; phi = 3* Math.PI / 4;
-        target.set(0,0,0);
-        updateCamera(); sendCamera();
-      }
-      if (e.key === 'Escape') {
-        radius = 15; theta = 0; phi = 3* Math.PI / 4;
-        target.set(0,0,0);
-        returnToMenu();
-      }
+    function resetCamera() {
+      clearPointers();
+      radius = 15; theta = 0; phi = 3 * Math.PI / 4;
+      target.set(0, 0, 0);
+      updateCamera(); sendCamera();
+    }
+
+    function backToMenu() {
+      clearPointers();
+      radius = 15; theta = 0; phi = 3 * Math.PI / 4;
+      target.set(0, 0, 0);
+      pendingCamera = null;
+      returnToMenu();
+    }
+
+    document.getElementById('reset-camera').addEventListener('click', resetCamera);
+    document.getElementById('back-to-menu').addEventListener('click', backToMenu);
+    window.addEventListener('keydown', e => {
+      if (!selectedModel) return;
+      if (e.key === 'r' || e.key === 'R') resetCamera();
+      if (e.key === 'Escape') backToMenu();
     });
-
-    // Bloquer le menu contextuel (clic droit)
-    window.addEventListener('contextmenu', (e) => e.preventDefault());
 
     // Resize
     window.addEventListener('resize', () => {
